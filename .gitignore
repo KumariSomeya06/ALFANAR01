@@ -1,0 +1,9 @@
+.vscode
+/data
+/extra
+/financial_aid_agent
+/frontend
+agent_v2.py
+package-lock.json
+/backend/ag-venv
+/backend/.env
