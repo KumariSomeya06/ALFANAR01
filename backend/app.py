@@ -196,7 +196,8 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
     Provide project planning/health summary AND load project to Databricks via Azure Function.
     
     Expected input example:
-    "Create SAP Project for Transmission Line TL-2025 with start 2025-09-01, budget ₹45Cr."
+    "Create SAP Project for Transmission Line TL-2025 with start 2025-09-01, budget ₹45Cr"
+    "Upload the data to the database or to table"
     
     Response:
     {
