@@ -309,10 +309,20 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
     raw_text = state.get("raw_text", "")
     user_input = state.get("user_input", "")
 
-    # Correct extraction of vendors
-    vendors: List[Dict] = state.get("result", {}).get("vendors", [])
-    if not isinstance(vendors, list):
-        vendors = [vendors]
+    result_data = state.get("result", {})
+
+    # ✅ Normalize vendors safely
+    if isinstance(result_data, list):
+        vendors = result_data
+    elif isinstance(result_data, dict):
+        if "vendors" in result_data:
+            vendors = result_data["vendors"]
+            if not isinstance(vendors, list):
+                vendors = [vendors]
+        else:
+            vendors = [result_data]
+    else:
+        vendors = []
 
     print("line 311 vendors:", vendors)
 
@@ -380,30 +390,30 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
 def response_synthesizer(state: OrchestratorState) -> OrchestratorState:
     structured_result = json.dumps(state.get("result", {}), indent=2)
     user_query = state.get("user_input", "").strip()
-    raw_text = state.get("raw_text", "")
 
-    if not user_query:
-        return {**state, "final_response": "Your file(s) have been processed successfully! You can now ask me questions about the documents."}
-
-    # Use LLM to identify query type
     prompt = f"""
-    You are a friendly AI assistant.
+    You are a friendly AI assistant for multi-agent workflow.
 
-    Task:
-    - Determine if the user query is a file upload command, general chit-chat, or a question about vendor/project data.
-    - Respond based on classification:
-      - If it's an upload command → "I have successfully processed your file(s). You can now ask me questions."
-      - If general chit-chat → reply naturally and friendly.
-      - If about vendor/project data → answer using structured data provided below.
-    
-    User query: "{user_query}"
+    Instructions:
+    1. Always provide the response in plain text (no JSON, no markdown fences).
+    2. If the user input is **only about uploading / taking / sharing a file** (without asking a question or analysis),
+       respond with something like:
+       "Your file(s) have been processed successfully! You can now ask me questions about the documents."
+    3. If the user input contains **both upload and analysis requests**, skip the upload confirmation
+       and only provide the analysis/answer.
+    4. If the result includes vendor comparison, scores, recommendations, or project summary, summarize them clearly.
+    5. If the result contains **databricks_status** or **value**, always mention whether data loading succeeded or failed.
+    6. If the query is chit-chat or not related to files/vendors/projects, just reply naturally.
 
-    Structured data (vendor info, project info, OCR text):
+    User query:
+    "{user_query}"
+
+    Structured data:
     {structured_result}
     """
 
     llm_response = orchestrator_llm.invoke([
-        {"role": "system", "content": "Friendly AI assistant for multi-agent workflow."},
+        {"role": "system", "content": "You are a friendly and precise assistant."},
         {"role": "user", "content": prompt}
     ])
 
@@ -425,13 +435,25 @@ workflow.set_entry_point("orchestrator")
 
 
 def multi_intent_router(state: OrchestratorState):
-    """Route execution to next required agent."""
+    """Route execution to next required agent with OCR precedence."""
     routes = state.get("routes", [])
+
     if not routes:
         return "synthesizer"
+
     next_route = routes.pop(0)
+
+    # Ensure OCR always runs first if required
+    if next_route in ["scm", "sap", "project"]:
+        # If OCR hasn't run yet, force it first
+        if not state.get("raw_text"):  # no OCR results yet
+            # Push the current route back so it executes after OCR
+            state["routes"] = [next_route] + routes
+            return "ocr"
+
     state["routes"] = routes
     return next_route if next_route in ["ocr", "scm", "sap", "project"] else "synthesizer"
+
 
 
 # Routing
