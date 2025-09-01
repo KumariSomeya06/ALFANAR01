@@ -91,7 +91,7 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
         url = os.getenv("AZURE_OCR_FUNCTION_URL")
         r = requests.get(url)
         raw_ocr = r.json()
-        print("OCR RAW RESPONSE:", raw_ocr)
+        # print("OCR RAW RESPONSE:", raw_ocr)
     except Exception as e:
         return {**state, "result": {"error": f"[OCR Agent ERROR] {str(e)}"}}
 
@@ -157,7 +157,7 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
 
 def scm_agent(state: OrchestratorState) -> OrchestratorState:
     """Handle all vendor-related queries: comparison, evaluation, risk analysis, scoring, or details."""
-    print("160", state.get("result"))
+    # print("160", state.get("result"))
 
     # Normalize vendor_data
     result_data = state.get("result", [])
@@ -213,11 +213,11 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
                 "rfq_id": rfq_id,
                 "vendor_names": missing_names
             }
-            print("209", payload)
+            # print("209", payload)
             r = requests.post(url, json=payload, timeout=15)
             r.raise_for_status()
             fetched_vendors = r.json()  # Expect list of vendor objects
-            print("213", fetched_vendors)
+            # print("213", fetched_vendors)
 
             if isinstance(fetched_vendors, dict):
                 fetched_vendors = [fetched_vendors]
@@ -324,7 +324,7 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
     else:
         vendors = []
 
-    print("line 311 vendors:", vendors)
+    # print("line 311 vendors:", vendors)
 
     # Step 1: Generate project summary using LLM
     context_text = f"Project input: {user_input}\n"
@@ -379,7 +379,7 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
 
         # Azure expects {"data": [...]}
         payload = {"data": vendors}
-        print("payload:", payload)
+        # print("payload:", payload)
 
         r = requests.post(
             azure_func_url,
@@ -390,6 +390,7 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
         )
         r.raise_for_status()
         resp_json = r.json()
+        # print("393",resp_json)
 
         databricks_status = resp_json.get("status", "SUCCESS")
         value_description = resp_json.get("value", "Project vendors ingested.")
