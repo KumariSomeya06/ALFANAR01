@@ -159,7 +159,7 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
     """Handle all vendor-related queries: comparison, evaluation, risk analysis, scoring, or details."""
     print("160", state.get("result"))
 
-    # ✅ Normalize vendor_data
+    # Normalize vendor_data
     result_data = state.get("result", [])
 
     if isinstance(result_data, list):
@@ -311,7 +311,7 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
 
     result_data = state.get("result", {})
 
-    # ✅ Normalize vendors safely
+    # Normalize vendors safely
     if isinstance(result_data, list):
         vendors = result_data
     elif isinstance(result_data, dict):
@@ -333,7 +333,31 @@ def project_agent(state: OrchestratorState) -> OrchestratorState:
     context_text += f"Additional context:\n{raw_text}"
 
     project_summary = project_llm.invoke(
-        f"Provide a detailed project schedule, cost breakdown, risks, and vendor alignment.\n\n{context_text}"
+        """
+        You are the Project Planning & Reporting Agent.
+        Generate a **formal, well-structured project summary** based on the following context.
+
+        Requirements:
+        1. Response must always be in a clear and professional tone (formal).
+        2. Organize output into sections with headings:
+        - Executive Summary
+        - Project Schedule (table format: Task | Start Date | End Date | Duration | Responsible Party)
+        - Cost Breakdown (table format: Item | Estimated Cost | Currency | Notes)
+        - Risk Assessment (table format: Risk | Probability | Impact | Mitigation Strategy)
+        - Vendor Alignment (table format: Vendor | RFQ ID | Proposal Amount | Delivery Weeks | Strengths | Weaknesses)
+        3. Use proper tabular formatting (no JSON, no markdown fences).
+        4. If some data is unavailable, mark as “Not provided”.
+        5. Ensure the response is concise but professional.
+
+        Context:
+        Project input: {user_input}
+
+        Vendor proposals:
+        {json.dumps({vendors}, indent=2)}
+
+        Additional context:
+        {raw_text}
+        """
     ).content
 
     # Step 2: Call new Azure ingestion function
