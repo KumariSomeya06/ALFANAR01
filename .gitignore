@@ -7,3 +7,5 @@ agent_v2.py
 package-lock.json
 /backend/ag-venv
 /backend/.env
+/alfanar_ai_agent
+/backend - old

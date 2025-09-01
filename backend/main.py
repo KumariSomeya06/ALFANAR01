@@ -9,10 +9,10 @@ from app import ocr_app as orchestrator_app
 
 app = FastAPI()
 
-# Allow frontend (React at localhost:3000) to call backend (FastAPI at localhost:8000)
+# Allow frontend to call backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # frontend URL
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +29,6 @@ blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CON
 # -----------------------------
 session_memory = {}  # { session_id: last OrchestratorState }
 
-
 @app.post("/process/")
 async def process_file(
     files: Optional[List[UploadFile]] = File(None),
@@ -37,9 +36,9 @@ async def process_file(
     session_id: Optional[str] = Form("default")
 ):
     try:
-        blob_urls, file_path, extracted_text = [], None, None
+        extracted_text = None
 
-        # Case 1: User uploaded new files
+        # Case 1: User uploaded new files → upload to blob storage
         if files:
             for file in files:
                 blob_client = blob_service_client.get_blob_client(
@@ -48,22 +47,15 @@ async def process_file(
                 contents = await file.read()
                 blob_client.upload_blob(contents, overwrite=True)
 
-                blob_url = f"https://{blob_service_client.account_name}.blob.core.windows.net/{CONTAINER_NAME}/{FOLDER_NAME}/{file.filename}"
-                blob_urls.append(blob_url)
-
-            file_path = blob_urls[0] if blob_urls else None
-
         # Case 2: No new file → use memory
         else:
             prev_state = session_memory.get(session_id)
             if prev_state:
-                file_path = prev_state.get("file_path")
                 extracted_text = prev_state.get("raw_text")
 
         # Build orchestrator input
         orchestrator_input = {
             "user_input": query or "",
-            "file_path": file_path,
             "container": CONTAINER_NAME,
             "intents": [],
             "routes": [],
@@ -79,13 +71,11 @@ async def process_file(
         # Save session memory
         session_memory[session_id] = {
             **orchestrator_result,
-            "file_path": file_path,
             "raw_text": orchestrator_result.get("raw_text", extracted_text)
         }
 
         return {
             "message": "Processed successfully",
-            "blob_urls": blob_urls,
             "query": query,
             "session_id": session_id,
             "result": orchestrator_result
