@@ -151,7 +151,25 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
     except Exception:
         normalized = {"error": "Failed to parse JSON", "raw_response": llm_response.content}
 
-    return {**state, "result": normalized}
+    ###################################
+    # --- Merge with existing result ---
+    existing = state.get("result", {})
+    if isinstance(existing, dict) and "vendors" in existing:
+        current_vendors = existing["vendors"]
+        if not isinstance(current_vendors, list):
+            current_vendors = [current_vendors]
+    else:
+        current_vendors = []
+
+    if isinstance(normalized, list):
+        current_vendors.extend(normalized)
+        merged_result = {"vendors": current_vendors}
+    else:
+        merged_result = normalized
+    ####################################
+
+    return {**state, "result": merged_result}
+    # return {**state, "result": normalized}
 
 
 
@@ -161,7 +179,7 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
 
     # Normalize vendor_data
     result_data = state.get("result", [])
-
+    
     if isinstance(result_data, list):
         vendor_data = result_data
     elif isinstance(result_data, dict):
@@ -208,21 +226,52 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
     # Step 3: Call Azure function if there are missing vendors
     if rfq_id and missing_names:
         try:
-            url = os.getenv("AZURE_VENDOR_FETCH_FUNCTION_URL")
+            azure_func_url = "https://alfanarapp.azurewebsites.net/api/query-vendor-quotes"
+            code = os.getenv("AZURE_VENDOR_FETCH_FUNCTION_CODE")
+
             payload = {
+                "filter":{
                 "rfq_id": rfq_id,
                 "vendor_names": missing_names
-            }
-            # print("209", payload)
-            r = requests.post(url, json=payload, timeout=15)
+            }}
+
+            print("209", payload)
+            # r = requests.post(url, json=payload, timeout=15)
+
+            r = requests.post(
+                azure_func_url,
+                params={"code": code},
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=60
+            )
+ 
             r.raise_for_status()
             fetched_vendors = r.json()  # Expect list of vendor objects
-            # print("213", fetched_vendors)
+            print("213", fetched_vendors)
 
+            # if isinstance(fetched_vendors, dict):
+            #     fetched_vendors = [fetched_vendors]
+
+            # print("vendor",vendor_data)
+            # vendor_data.extend(fetched_vendors)  # merge into single vendors list
+
+            # ###############################
             if isinstance(fetched_vendors, dict):
                 fetched_vendors = [fetched_vendors]
 
-            vendor_data.extend(fetched_vendors)  # merge into single vendors list
+            # merge into existing vendor_data
+            if isinstance(vendor_data, dict):
+                vendor_data = [vendor_data]
+            vendor_data.extend(fetched_vendors)
+
+            # save back into state["result"]
+            if isinstance(state.get("result"), dict):
+                state["result"]["vendors"] = vendor_data
+            else:
+                state["result"] = {"vendors": vendor_data}
+            ###############################
+            print("vendor_merge",vendor_data)
         except Exception as e:
             return {**state, "result": {"error": f"[SCM Agent ERROR] Failed to fetch vendor data: {str(e)}"}}
 
@@ -236,17 +285,18 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
        Each vendor object may include:
        - rfq_id, vendor_name, warranty, delivery_weeks, proposal_amount, currency,
         payment_terms, source_file_path, extracted_on_utc.
-    2. Do NOT hallucinate. If a field is missing, state "not available".
-    3. Use weightage when comparing or scoring:
+    2. ALWAYS include the full list of vendors you are given in the "vendors" section and do not remove any vendors data given initially.
+    3. Do NOT hallucinate. If a field is missing, state "not available".
+    4. Use weightage when comparing or scoring:
        - proposal_amount (Cost): 40%
        - delivery_weeks (Delivery Time): 25%
        - warranty: 15%
        - payment_terms: 10%
        - vendor reputation/name: 10%
-    4. Handle multiple use cases:
+    5. Handle multiple use cases:
        - Comparison, evaluation, risk analysis, scoring
        - Fact lookup if asked for a specific field
-    5. Do not include markdown formatting, code fences, or extra text and Response must be valid JSON with structure:
+    6. Do not include markdown formatting, code fences, or extra text and Response must be valid JSON with structure:
     {
       "summary": "...",
       "vendor_scores": [
