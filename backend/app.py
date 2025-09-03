@@ -118,7 +118,12 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
 
     - Never hallucinate or invent values.
     - Each vendor entry must be a separate JSON object.
-    - Do not include markdown formatting, code fences, or extra text. 
+    - Do not include markdown formatting, code fences, or extra text.
+    IMPORTANT:
+    - Normalize all of the following to **doc_id**:
+    ["doc id", "document id", "quotation id", "quotation number", "quotation reference", "reference id"]
+    - If any of these appear in OCR, always map them to the single field `"doc_id"`.
+    - If multiple are present, prefer the most explicit (quotation id > quotation number > doc id). 
 
     Schema per vendor:
     {{
