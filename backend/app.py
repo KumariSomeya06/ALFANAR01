@@ -128,6 +128,8 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
         "submission_date": "<YYYY-MM-DD or null>",
         "unit_price": <float or null>,
         "delivery_weeks": <int or null>,
+        "warranty": "<string or null>",          
+        "payment_terms": "<string or null>",     
         "source_file_path": "<string or null>",  # blob path
         "extracted_on_utc": "<string or null>",  # extraction timestamp
 
@@ -173,13 +175,175 @@ def ocr_agent(state: OrchestratorState) -> OrchestratorState:
 
 
 
+# def scm_agent(state: OrchestratorState) -> OrchestratorState:
+#     """Handle all vendor-related queries: comparison, evaluation, risk analysis, scoring, or details."""
+#     # print("160", state.get("result"))
+
+#     # Normalize vendor_data
+#     result_data = state.get("result", [])
+    
+#     if isinstance(result_data, list):
+#         vendor_data = result_data
+#     elif isinstance(result_data, dict):
+#         vendor_data = result_data.get("vendors", [])
+#         if isinstance(vendor_data, dict):
+#             vendor_data = [vendor_data]
+#     else:
+#         vendor_data = []
+
+#     raw_text = state.get("raw_text", "")
+#     user_query = state.get("user_input", "")
+
+#     # Step 1: Extract RFQ ID and vendor names from user query
+#     extractor_prompt = """
+#     You are an assistant that extracts RFQ ID and vendor names from user queries.
+
+#     Task:
+#     - User query contains exactly one RFQ ID and may mention multiple vendor names.
+#     - Return RFQ ID and list of vendor names explicitly mentioned.
+#     - Only return valid JSON.
+#     - Do not include markdown formatting, code fences, or extra text. 
+
+#     JSON Schema:
+#     {
+#       "rfq_id": "<string or null>",
+#       "vendor_names": ["<vendor name 1>", "<vendor name 2>", ...]
+#     }
+#     """
+#     try:
+#         extraction_resp = scm_llm.invoke([
+#             {"role": "system", "content": extractor_prompt},
+#             {"role": "user", "content": f"User query: {user_query}"}
+#         ])
+#         parsed_extract = json.loads(extraction_resp.content.strip())
+#         rfq_id = parsed_extract.get("rfq_id")
+#         vendor_names = parsed_extract.get("vendor_names", [])
+#     except Exception:
+#         rfq_id, vendor_names = None, []
+
+#     # Step 2: Identify missing vendors
+#     existing_names = {v.get("vendor_name") for v in vendor_data}
+#     missing_names = [vn for vn in vendor_names if vn not in existing_names]
+
+#     # Step 3: Call Azure function if there are missing vendors
+#     if rfq_id and missing_names:
+#         try:
+#             azure_func_url = "https://alfanarapp.azurewebsites.net/api/query-vendor-quotes"
+#             code = os.getenv("AZURE_VENDOR_FETCH_FUNCTION_CODE")
+
+#             payload = {
+#                 "filter":{
+#                 "rfq_id": rfq_id,
+#                 "vendor_names": missing_names
+#             }}
+
+#             print("209", payload)
+#             # r = requests.post(url, json=payload, timeout=15)
+
+#             r = requests.post(
+#                 azure_func_url,
+#                 params={"code": code},
+#                 json=payload,
+#                 headers={"Content-Type": "application/json"},
+#                 timeout=60
+#             )
+ 
+#             r.raise_for_status()
+#             fetched_vendors = r.json()  # Expect list of vendor objects
+#             print("213", fetched_vendors)
+
+#             # if isinstance(fetched_vendors, dict):
+#             #     fetched_vendors = [fetched_vendors]
+
+#             # print("vendor",vendor_data)
+#             # vendor_data.extend(fetched_vendors)  # merge into single vendors list
+
+#             # ###############################
+#             if isinstance(fetched_vendors, dict):
+#                 fetched_vendors = [fetched_vendors]
+
+#             # merge into existing vendor_data
+#             if isinstance(vendor_data, dict):
+#                 vendor_data = [vendor_data]
+#             vendor_data.extend(fetched_vendors)
+
+#             # save back into state["result"]
+#             if isinstance(state.get("result"), dict):
+#                 state["result"]["vendors"] = vendor_data
+#             else:
+#                 state["result"] = {"vendors": vendor_data}
+#             ###############################
+#             print("vendor_merge",vendor_data)
+#         except Exception as e:
+#             return {**state, "result": {"error": f"[SCM Agent ERROR] Failed to fetch vendor data: {str(e)}"}}
+
+#     # Step 4: SCM reasoning / scoring / comparison
+#     system_prompt = """
+#     You are the SCM (Supply Chain Management) Agent.
+#     Your job is to answer ANY query related to vendor quotations.
+
+#     Rules:
+#     1. You will receive a list of vendor objects (not just one).
+#        Each vendor object may include:
+#        - rfq_id, vendor_name, warranty, delivery_weeks, proposal_amount, currency,
+#         payment_terms, source_file_path, extracted_on_utc.
+#     2. ALWAYS include the full list of vendors you are given in the "vendors" section and do not remove any vendors data given initially.
+#     3. Do NOT hallucinate. If a field is missing, state "not available".
+#     4. Use weightage when comparing or scoring:
+#        - proposal_amount (Cost): 40%
+#        - delivery_weeks (Delivery Time): 25%
+#        - warranty: 15%
+#        - payment_terms: 10%
+#        - vendor reputation/name: 10%
+#     5. Handle multiple use cases:
+#        - Comparison, evaluation, risk analysis, scoring
+#        - Fact lookup if asked for a specific field
+#     6. Do not include markdown formatting, code fences, or extra text and Response must be valid JSON with structure:
+#     {
+#       "summary": "...",
+#       "vendor_scores": [
+#         {
+#           "vendor": "<name>",
+#           "score": 85,
+#           "strengths": [...],
+#           "weaknesses": [...],
+#           "source_file_path": "<blob>",
+#           "extracted_on_utc": "<timestamp>"
+#         }
+#       ],
+#       "vendors": [
+#         {
+#             "doc_id": "<string or null>",
+#             "rfq_id": "<string or null>",
+#             "vendor_name": "<string or null>",
+#             "submission_date": "<YYYY-MM-DD or null>",
+#             "unit_price": <float or null>,
+#             "delivery_weeks": <int or null>,
+#             "source_file_path": "<string or null>",
+#             "extracted_on_utc": "<string or null>"
+#         }
+#       ],
+#       "recommendation": "..."
+#     }
+#     """
+
+#     response = scm_llm.invoke([
+#         {"role": "system", "content": system_prompt},
+#         {"role": "user", "content": f"User query: {user_query}\nVendor data: {json.dumps(vendor_data, indent=2)}\nRaw text: {raw_text}"}
+#     ])
+
+#     try:
+#         parsed = json.loads(response.content.strip())
+#     except Exception:
+#         parsed = {"error": "Failed to parse SCM JSON", "raw_response": response.content}
+
+#     return {**state, "result": parsed}
+
 def scm_agent(state: OrchestratorState) -> OrchestratorState:
     """Handle all vendor-related queries: comparison, evaluation, risk analysis, scoring, or details."""
-    # print("160", state.get("result"))
 
     # Normalize vendor_data
     result_data = state.get("result", [])
-    
     if isinstance(result_data, list):
         vendor_data = result_data
     elif isinstance(result_data, dict):
@@ -192,20 +356,26 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
     raw_text = state.get("raw_text", "")
     user_query = state.get("user_input", "")
 
-    # Step 1: Extract RFQ ID and vendor names from user query
+    # ---------------------------------------------------------
+    # 🔥 CHANGE 1: Extractor prompt now supports multiple RFQs
+    # ---------------------------------------------------------
     extractor_prompt = """
-    You are an assistant that extracts RFQ ID and vendor names from user queries.
+    You are an assistant that extracts RFQ ID(s) and vendor name(s) from user queries.
 
     Task:
-    - User query contains exactly one RFQ ID and may mention multiple vendor names.
-    - Return RFQ ID and list of vendor names explicitly mentioned.
-    - Only return valid JSON.
-    - Do not include markdown formatting, code fences, or extra text. 
+    - A query may contain multiple RFQ IDs, each linked to one or more vendor names.
+    - Always map each vendor to its correct RFQ ID.
+    - Return them under the key "filter" (list of objects).
+    - Only return valid JSON. No markdown, no code fences.
 
     JSON Schema:
     {
-      "rfq_id": "<string or null>",
-      "vendor_names": ["<vendor name 1>", "<vendor name 2>", ...]
+      "filter": [
+        {
+          "rfq_id": "<string>",
+          "vendor_names": ["<vendor1>", "<vendor2>", ...]
+        }
+      ]
     }
     """
     try:
@@ -214,66 +384,53 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
             {"role": "user", "content": f"User query: {user_query}"}
         ])
         parsed_extract = json.loads(extraction_resp.content.strip())
-        rfq_id = parsed_extract.get("rfq_id")
-        vendor_names = parsed_extract.get("vendor_names", [])
+        filters = parsed_extract.get("filter", [])
     except Exception:
-        rfq_id, vendor_names = None, []
+        filters = []
 
-    # Step 2: Identify missing vendors
-    existing_names = {v.get("vendor_name") for v in vendor_data}
-    missing_names = [vn for vn in vendor_names if vn not in existing_names]
+    # ---------------------------------------------------------
+    # 🔥 CHANGE 2: Loop through each RFQ block & fetch missing
+    # ---------------------------------------------------------
+    for f in filters:
+        rfq_id = f.get("rfq_id")
+        vendor_names = f.get("vendor_names", [])
 
-    # Step 3: Call Azure function if there are missing vendors
-    if rfq_id and missing_names:
-        try:
-            azure_func_url = "https://alfanarapp.azurewebsites.net/api/query-vendor-quotes"
-            code = os.getenv("AZURE_VENDOR_FETCH_FUNCTION_CODE")
+        # Step A: Identify missing vendors for this RFQ
+        existing_names = {v.get("vendor_name") for v in vendor_data if v.get("rfq_id") == rfq_id}
+        missing_names = [vn for vn in vendor_names if vn not in existing_names]
 
-            payload = {
-                "filter":{
-                "rfq_id": rfq_id,
-                "vendor_names": missing_names
-            }}
-
+        # Step B: Call Azure only if something is missing
+        if rfq_id and missing_names:
+            payload = {"filter": {"rfq_id": rfq_id, "vendor_names": missing_names}}
             print("209", payload)
-            # r = requests.post(url, json=payload, timeout=15)
 
-            r = requests.post(
-                azure_func_url,
-                params={"code": code},
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=60
-            )
- 
-            r.raise_for_status()
-            fetched_vendors = r.json()  # Expect list of vendor objects
-            print("213", fetched_vendors)
+            try:
+                r = requests.post(
+                    "https://alfanarapp.azurewebsites.net/api/query-vendor-quotes",
+                    params={"code": os.getenv("AZURE_VENDOR_FETCH_FUNCTION_CODE")},
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=60
+                )
+                r.raise_for_status()
+                fetched_vendors = r.json()
+                print("213", fetched_vendors)
 
-            # if isinstance(fetched_vendors, dict):
-            #     fetched_vendors = [fetched_vendors]
+                if isinstance(fetched_vendors, dict):
+                    fetched_vendors = [fetched_vendors]
 
-            # print("vendor",vendor_data)
-            # vendor_data.extend(fetched_vendors)  # merge into single vendors list
+                vendor_data.extend(fetched_vendors)
 
-            # ###############################
-            if isinstance(fetched_vendors, dict):
-                fetched_vendors = [fetched_vendors]
+            except Exception as e:
+                return {**state, "result": {"error": f"[SCM Agent ERROR] Failed to fetch vendor data: {str(e)}"}}
 
-            # merge into existing vendor_data
-            if isinstance(vendor_data, dict):
-                vendor_data = [vendor_data]
-            vendor_data.extend(fetched_vendors)
-
-            # save back into state["result"]
-            if isinstance(state.get("result"), dict):
-                state["result"]["vendors"] = vendor_data
-            else:
-                state["result"] = {"vendors": vendor_data}
-            ###############################
-            print("vendor_merge",vendor_data)
-        except Exception as e:
-            return {**state, "result": {"error": f"[SCM Agent ERROR] Failed to fetch vendor data: {str(e)}"}}
+    # ---------------------------------------------------------
+    # 🔥 CHANGE 3: Save merged vendors back into state["result"]
+    # ---------------------------------------------------------
+    if isinstance(state.get("result"), dict):
+        state["result"]["vendors"] = vendor_data
+    else:
+        state["result"] = {"vendors": vendor_data}
 
     # Step 4: SCM reasoning / scoring / comparison
     system_prompt = """
@@ -284,15 +441,15 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
     1. You will receive a list of vendor objects (not just one).
        Each vendor object may include:
        - rfq_id, vendor_name, warranty, delivery_weeks, proposal_amount, currency,
-        payment_terms, source_file_path, extracted_on_utc.
+         payment_terms, source_file_path, extracted_on_utc.
     2. ALWAYS include the full list of vendors you are given in the "vendors" section and do not remove any vendors data given initially.
     3. Do NOT hallucinate. If a field is missing, state "not available".
     4. Use weightage when comparing or scoring:
-       - proposal_amount (Cost): 40%
-       - delivery_weeks (Delivery Time): 25%
-       - warranty: 15%
-       - payment_terms: 10%
-       - vendor reputation/name: 10%
+        - unit_price (Cost): 35%
+        - delivery_weeks (Delivery Time): 25%
+        - warranty: 15%
+        - payment_terms: 15%
+        - vendor reputation/name: 10%
     5. Handle multiple use cases:
        - Comparison, evaluation, risk analysis, scoring
        - Fact lookup if asked for a specific field
@@ -317,6 +474,8 @@ def scm_agent(state: OrchestratorState) -> OrchestratorState:
             "submission_date": "<YYYY-MM-DD or null>",
             "unit_price": <float or null>,
             "delivery_weeks": <int or null>,
+            "warranty": "<string or null>",         
+            "payment_terms": "<string or null>",
             "source_file_path": "<string or null>",
             "extracted_on_utc": "<string or null>"
         }
@@ -522,9 +681,13 @@ def multi_intent_router(state: OrchestratorState):
     if next_route in ["scm", "sap", "project"]:
         # If OCR hasn't run yet, force it first
         if not state.get("raw_text"):  # no OCR results yet
+            
             # Push the current route back so it executes after OCR
-            state["routes"] = [next_route] + routes
-            return "ocr"
+            if "ocr" in state.get("intents", []):
+                state["routes"] = [next_route] + routes
+                return "ocr"
+        else:
+            pass
 
     state["routes"] = routes
     return next_route if next_route in ["ocr", "scm", "sap", "project"] else "synthesizer"
