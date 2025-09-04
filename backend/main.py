@@ -53,6 +53,7 @@ async def process_file(
             if prev_state:
                 extracted_text = prev_state.get("raw_text")
 
+        file_uploaded = bool(files) 
         # Build orchestrator input
         orchestrator_input = {
             "user_input": query or "",
@@ -62,7 +63,8 @@ async def process_file(
             "result": session_memory.get(session_id, {}).get("result", {}),
             "raw_text": extracted_text or "",
             "final_response": "",
-            "task_breakdown": ""
+            "task_breakdown": "",
+            "file_uploaded": file_uploaded
         }
 
         # Run orchestrator

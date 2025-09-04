@@ -21,6 +21,7 @@ class OrchestratorState(TypedDict):
     final_response: str
     raw_text: str   # store extracted OCR text
     task_breakdown: str
+    file_uploaded: bool 
 
 
 # -----------------------------
@@ -688,7 +689,8 @@ def multi_intent_router(state: OrchestratorState):
         if not state.get("raw_text"):  # no OCR results yet
             
             # Push the current route back so it executes after OCR
-            if "ocr" in state.get("intents", []):
+            # if "ocr" in state.get("intents", []):
+            if state.get("file_uploaded"):
                 state["routes"] = [next_route] + routes
                 return "ocr"
         else:
